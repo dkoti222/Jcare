@@ -1,0 +1,130 @@
+import { Keyboard, TouchableWithoutFeedback, View } from 'react-native';
+import React, { useState } from 'react';
+import GlobalText from '../components/GlobalText';
+import GlobalTextInput from '../components/GlobalTextInput';
+import { customFonts } from '../theme/fonts';
+import { heightPercentageToDP as hp, widthPercentageToDP as wp } from 'react-native-responsive-screen';
+import GlobalButton from '../components/GlobalButton';
+import { useNavigation } from '@react-navigation/native';
+import Toast from 'react-native-toast-message';
+import { colors } from '../theme/colors';
+
+const ProfileEditScreen = () => {
+  const navigation = useNavigation<any>();
+
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [panchayat, setPanchayat] = useState('');
+  const [mandal, setMandal] = useState('');
+  const [pincode, setPincode] = useState('');
+
+  const validateInputs = () => {
+    if (!name.trim() || !email.trim() || !panchayat.trim() || !mandal.trim() || !pincode.trim()) {
+      Toast.show({
+        type: 'error',
+        text1: 'All fields are required!',
+        position: 'top',
+        visibilityTime: 2000,
+      });
+      return false;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Toast.show({
+        type: 'error',
+        text1: 'Invalid email format!',
+        position: 'top',
+        visibilityTime: 2000,
+      });
+      return false;
+    }
+
+    if (!/^\d{6}$/.test(pincode)) {
+      Toast.show({
+        type: 'error',
+        text1: 'Pincode must be 6 digits!',
+        position: 'top',
+        visibilityTime: 2000,
+      });
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleEdit = () => {
+    if (!validateInputs()) return;
+
+    // You can handle saving profile data here
+
+    Toast.show({
+      type: 'success',
+      text1: 'Profile Updated!',
+      position: 'top',
+      visibilityTime: 2000,
+    });
+
+  };
+
+  const handleLogout = () => {
+    navigation.navigate('Auth');
+  };
+
+  return (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <View style={{ flex: 1, alignItems: 'center', paddingVertical: wp(5) }}>
+        <GlobalText
+          children="Profile"
+          fontSize={22}
+          fontFamily={customFonts.interMedium}
+          color={colors.black}
+          style={{ marginVertical: hp(2) }}
+        />
+
+        <View style={{ gap: hp(1), marginTop: hp(4) }}>
+          <GlobalTextInput
+            placeholder="Name"
+            value={name}
+            onChangeText={setName}
+          />
+          <GlobalTextInput
+            placeholder="Email id"
+            value={email}
+            onChangeText={setEmail}
+          />
+          <GlobalTextInput
+            placeholder="Panchayat"
+            value={panchayat}
+            onChangeText={setPanchayat}
+          />
+          <GlobalTextInput
+            placeholder="Mandal"
+            value={mandal}
+            onChangeText={setMandal}
+          />
+          <GlobalTextInput
+            placeholder="Pincode"
+            value={pincode}
+            onChangeText={setPincode}
+            keyboardType="number-pad"
+          />
+        </View>
+
+        <GlobalButton
+          title="Edit"
+          containerStyle={{ marginTop: hp(20) }}
+          onPress={handleEdit}
+        />
+
+        <GlobalButton
+          title="Logout"
+          containerStyle={{ marginTop: hp(2) }}
+          onPress={handleLogout}
+        />
+      </View>
+    </TouchableWithoutFeedback>
+  );
+};
+
+export default ProfileEditScreen;
