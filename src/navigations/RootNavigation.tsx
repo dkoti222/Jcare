@@ -9,15 +9,17 @@ import { createStackNavigator } from '@react-navigation/stack';
 import SplashScreen from '../screens/SplashScreen';
 import { BottomTabNavigation } from './TabNavigation';
 import AuthStack from './AuthStack';
+import ComplaintScreen from '../screens/ComplaintDetails';
 
 
 const Stack = createStackNavigator();
 
 function RootStack() {
     return (
-        <Stack.Navigator  initialRouteName='SplashScreen' screenOptions={{ headerShown: false }}>
+        <Stack.Navigator initialRouteName='SplashScreen' screenOptions={{ headerShown: false }}>
             <Stack.Screen name="SplashScreen" component={SplashScreen} />
-              <Stack.Screen name="Auth" component={AuthStack} />
+            <Stack.Screen name="Auth" component={AuthStack} />
+            <Stack.Screen name="ComplaintScreen" component={ComplaintScreen} />
             <Stack.Screen name="BottomTab" component={BottomTabNavigation} />
         </Stack.Navigator>
     );
