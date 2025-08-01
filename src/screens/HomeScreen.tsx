@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
     View,
     StyleSheet,
@@ -9,6 +9,8 @@ import {
     Image,
     ScrollView,
     KeyboardAvoidingView,
+    ActivityIndicator,
+    Animated,
 } from 'react-native';
 import GlobalText from '../components/GlobalText';
 import GlobalDropDown from '../components/GlobalDropdown';
@@ -20,26 +22,33 @@ import GlobalTextInput from '../components/GlobalTextInput';
 import { colors } from '../theme/colors';
 import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import Toast from 'react-native-toast-message';
+import Video from 'react-native-video';
+import { supabase } from '../supabaseClient';
+import uuid from 'react-native-uuid';
+import RNFS from 'react-native-fs';
+import { decode } from 'base64-arraybuffer';
 
 const HomeScreen = ({ navigation }) => {
-    const [photos, setPhotos] = useState([]);
+    const [mediaFiles, setMediaFiles] = useState([]);
     const [description, setDescription] = useState('');
-
-    const [panchayatLevel, setPanchayatLevel] = useState(null);
     const [district, setDistrict] = useState(null);
     const [mandal, setMandal] = useState(null);
     const [panchayat, setPanchayat] = useState(null);
-    const [category, setCategory] = useState(null);
     const [openDropdownIndex, setOpenDropdownIndex] = useState<number | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [showSuccess, setShowSuccess] = useState(false);
 
-    const handleAddPhoto = () => {
-        if (photos.length >= 3) {
-            Alert.alert('Limit Reached', 'You can only upload up to 3 photos.');
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const slideAnim = useRef(new Animated.Value(50)).current;
+
+    const handleAddMedia = () => {
+        if (mediaFiles.length >= 3) {
+            Alert.alert('Limit Reached', 'You can only upload up to 3 files.');
             return;
         }
 
         Alert.alert(
-            'Upload Photo',
+            'Upload Media',
             'Choose an option',
             [
                 { text: 'Camera', onPress: openCamera },
@@ -57,7 +66,7 @@ const HomeScreen = ({ navigation }) => {
                     PermissionsAndroid.PERMISSIONS.CAMERA,
                     {
                         title: 'Camera Permission',
-                        message: 'App needs camera access to take a photo',
+                        message: 'App needs camera access to take a photo or video',
                         buttonPositive: 'OK',
                         buttonNegative: 'Cancel',
                     }
@@ -70,8 +79,10 @@ const HomeScreen = ({ navigation }) => {
             }
 
             const options = {
-                mediaType: 'photo',
+                mediaType: 'mixed',
                 quality: 0.7,
+                videoQuality: 'low',
+                durationLimit: 60,
                 saveToPhotos: true,
             };
 
@@ -83,7 +94,7 @@ const HomeScreen = ({ navigation }) => {
                 }
 
                 if (response.assets && response.assets.length > 0) {
-                    setPhotos((prev) => [...prev, response.assets[0]]);
+                    setMediaFiles((prev) => [...prev, response.assets[0]]);
                 }
             });
         } catch (error) {
@@ -92,9 +103,12 @@ const HomeScreen = ({ navigation }) => {
     };
 
     const openGallery = () => {
+        const remainingSlots = 3 - mediaFiles.length;
+
         const options = {
-            mediaType: 'photo',
+            mediaType: 'mixed',
             quality: 0.7,
+            selectionLimit: remainingSlots,
         };
 
         launchImageLibrary(options, (response) => {
@@ -105,13 +119,16 @@ const HomeScreen = ({ navigation }) => {
             }
 
             if (response.assets && response.assets.length > 0) {
-                setPhotos((prev) => [...prev, response.assets[0]]);
+                const allFiles = [...mediaFiles, ...response.assets];
+                const uniqueFiles = Array.from(new Set(allFiles.map(f => f.uri)))
+                    .map(uri => allFiles.find(f => f.uri === uri));
+                setMediaFiles(uniqueFiles);
             }
         });
     };
 
-    const handleSubmit = () => {
-        if (!panchayatLevel || !district || !mandal || !panchayat || !category) {
+    const handleSubmit = async () => {
+        if (!district || !mandal || !panchayat) {
             Toast.show({
                 type: 'error',
                 text1: 'Missing Fields',
@@ -133,49 +150,101 @@ const HomeScreen = ({ navigation }) => {
             return;
         }
 
-        if (photos.length === 0) {
+        if (mediaFiles.length === 0) {
             Toast.show({
                 type: 'error',
-                text1: 'No Photos',
-                text2: 'Please upload at least one photo.',
+                text1: 'No Files',
+                text2: 'Please upload at least one file.',
                 visibilityTime: 1500,
                 position: 'bottom',
             });
             return;
         }
 
-        const formData = {
-            panchayatLevel,
-            district,
-            mandal,
-            panchayat,
-            category,
-            description,
-            photos,
-        };
+        setIsLoading(true);
 
-        console.log('Submitted:', formData);
+        try {
+            const uploadedUrls = [];
 
-        Toast.show({
-            type: 'success',
-            text1: 'Complaint Submitted!',
-            text2: 'Thank you for your feedback.',
-            visibilityTime: 2000,
-            position: 'bottom',
-            
+            for (const file of mediaFiles) {
+                const ext = file.fileName?.split('.').pop() || 'jpg';
+                const uniqueName = `${uuid.v4()}.${ext}`;
+                const path = file.uri.replace('file://', '');
 
-            
-        
-        });
-        setPanchayatLevel(null);
-        setDistrict(null);
-        setMandal(null);
-        setPanchayat(null);
-        setCategory(null);
-        setDescription('');
-        setPhotos([]);
+                const base64Data = await RNFS.readFile(path, 'base64');
+                const arrayBuffer = decode(base64Data);
 
+                const { error: uploadError } = await supabase.storage
+                    .from('media')
+                    .upload(`public/${uniqueName}`, arrayBuffer, {
+                        contentType: file.type || 'image/jpeg',
+                    });
+
+                if (uploadError) throw uploadError;
+
+                const { data } = supabase.storage.from('media').getPublicUrl(`public/${uniqueName}`);
+                uploadedUrls.push(data.publicUrl);
+            }
+
+            const { error: insertError } = await supabase.from('complaints').insert([
+                {
+                    status: 'Pending',
+                    district,
+                    mandal,
+                    panchayat,
+                    description,
+                    media_urls: uploadedUrls,
+                    created_at: new Date().toISOString(),
+                },
+            ]);
+
+            if (insertError) throw insertError;
+
+            Toast.show({
+                type: 'success',
+                text1: 'Complaint Submitted!',
+                text2: 'Thank you for your feedback.',
+                visibilityTime: 2000,
+                position: 'bottom',
+            });
+
+            setDistrict(null);
+            setMandal(null);
+            setPanchayat(null);
+            setDescription('');
+            setMediaFiles([]);
+            setShowSuccess(true);
+
+            Animated.parallel([
+                Animated.timing(fadeAnim, {
+                    toValue: 1,
+                    duration: 800,
+                    useNativeDriver: true,
+                }),
+                Animated.timing(slideAnim, {
+                    toValue: 0,
+                    duration: 800,
+                    useNativeDriver: true,
+                }),
+            ]).start();
+
+            // Optional: hide success message after 5s
+            setTimeout(() => {
+                setShowSuccess(false);
+                fadeAnim.setValue(0);
+                slideAnim.setValue(20);
+            }, 5000);
+
+        } catch (error) {
+            console.error(error);
+            Alert.alert('Error', 'Failed to upload complaint. Please try again.');
+        } finally {
+            setIsLoading(false);
+        }
     };
+
+
+   
 
     return (
         <KeyboardAvoidingView
@@ -187,14 +256,19 @@ const HomeScreen = ({ navigation }) => {
                 contentContainerStyle={styles.scrollContainer}
                 keyboardShouldPersistTaps="handled"
             >
-                {/* Header */}
+                {isLoading && (
+                    <View style={styles.loaderContainer}>
+                        <ActivityIndicator size="large" color={colors.primary} />
+                    </View>
+                )}
+
                 <View style={styles.profileWrapper}>
                     <View style={styles.locationRow}>
                         <View style={styles.circle}>
-                            <GlobalText children={'H'} />
+                            <GlobalText children={'A'} />
                         </View>
                         <GlobalText
-                            children={'Hello Hemanth'}
+                            children={'Hello Avinash'}
                             fontSize={14}
                             fontFamily={customFonts.interMedium}
                         />
@@ -209,96 +283,95 @@ const HomeScreen = ({ navigation }) => {
                     </View>
                 </View>
 
-                {/* Dropdowns */}
                 <View style={styles.dropdownWrapper}>
                     <GlobalDropDown
                         open={openDropdownIndex === 0}
                         setOpen={(open) => setOpenDropdownIndex(open ? 0 : null)}
-                        value={panchayatLevel}
-                        setValue={setPanchayatLevel}
-                        items={[
-                            { label: 'Gram Panchayat', value: 'gram' },
-                            { label: 'Mandal Panchayat', value: 'mandal' },
-                        ]}
-                        placeholder="Select Panchayat Level"
-                        zIndex={1000}
-                        zIndexInverse={4000}
-                    />
-                    <GlobalDropDown
-                        open={openDropdownIndex === 1}
-                        setOpen={(open) => setOpenDropdownIndex(open ? 1 : null)}
                         value={district}
                         setValue={setDistrict}
                         items={[
                             { label: 'Prakasam', value: 'prakasam' },
                             { label: 'Guntur', value: 'guntur' },
+                            { label: 'visakhapatnam', value: 'visakhapatnam' },
+                            { label: 'vijayawada', value: 'vijayawada' },
                         ]}
                         placeholder="Select District"
                         zIndex={999}
                         zIndexInverse={3999}
                     />
                     <GlobalDropDown
-                        open={openDropdownIndex === 2}
-                        setOpen={(open) => setOpenDropdownIndex(open ? 2 : null)}
+                        open={openDropdownIndex === 1}
+                        setOpen={(open) => setOpenDropdownIndex(open ? 1 : null)}
                         value={mandal}
                         setValue={setMandal}
                         items={[
                             { label: 'Kandukur', value: 'kandukur' },
                             { label: 'Chirala', value: 'chirala' },
+                            { label: 'Nandigama', value: 'nandigama' },
+                            { label: 'Chilakaluripet', value: 'chilakaluripet' },
                         ]}
                         placeholder="Select Mandal"
                         zIndex={998}
                         zIndexInverse={3998}
                     />
                     <GlobalDropDown
-                        open={openDropdownIndex === 3}
-                        setOpen={(open) => setOpenDropdownIndex(open ? 3 : null)}
+                        open={openDropdownIndex === 2}
+                        setOpen={(open) => setOpenDropdownIndex(open ? 2 : null)}
                         value={panchayat}
                         setValue={setPanchayat}
                         items={[
                             { label: 'Panchayat A', value: 'a' },
                             { label: 'Panchayat B', value: 'b' },
+                            { label: 'Panchayat C', value: 'c' },
                         ]}
                         placeholder="Select Panchayat"
                         zIndex={997}
                         zIndexInverse={3997}
                     />
-                    <GlobalDropDown
-                        open={openDropdownIndex === 4}
-                        setOpen={(open) => setOpenDropdownIndex(open ? 4 : null)}
-                        value={category}
-                        setValue={setCategory}
-                        items={[
-                            { label: 'Water Issue', value: 'water' },
-                            { label: 'Electricity Issue', value: 'electricity' },
-                        ]}
-                        placeholder="Select Complaint Category"
-                        zIndex={996}
-                        zIndexInverse={3996}
-                    />
                 </View>
 
-                {/* Photo Upload */}
                 <View style={styles.photoTextRow}>
-                    <TouchableOpacity onPress={handleAddPhoto}>
+                    <TouchableOpacity onPress={handleAddMedia}>
                         <MaterialIcons name="add-photo-alternate" size={30} color="black" />
                     </TouchableOpacity>
                     <GlobalText
-                        children={'Upload Photos'}
+                        children={'Upload Media'}
                         fontSize={18}
                         fontFamily={customFonts.interSemi_Bold}
                     />
                 </View>
 
                 <View style={styles.photoPreviewRow}>
-                    {photos.map((photo, index) => (
-                        <View key={index} style={styles.photoBox}>
-                            <Image source={{ uri: photo.uri }} style={styles.photoThumbnail} />
-                        </View>
-                    ))}
+                    {mediaFiles.map((file, index) => {
+                        const fileType = file.type || '';
+                        return (
+                            <View key={index} style={styles.photoBox}>
+                                {fileType.startsWith('image') && (
+                                    <Image source={{ uri: file.uri }} style={styles.photoThumbnail} />
+                                )}
+                                {fileType.startsWith('video') && (
+                                    <Video
+                                        source={{ uri: file.uri }}
+                                        style={styles.photoThumbnail}
+                                        resizeMode="cover"
+                                        muted
+                                        repeat
+                                        paused
+                                    />
+                                )}
+                                {fileType.startsWith('audio') && (
+                                    <TouchableOpacity
+                                        onPress={() => Alert.alert('Audio File', 'Playing audio not implemented')}
+                                        style={[styles.photoThumbnail, { justifyContent: 'center', alignItems: 'center' }]}
+                                    >
+                                        <MaterialIcons name="audiotrack" size={24} color="black" />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        );
+                    })}
                 </View>
 
-                {/* Description */}
                 <GlobalTextInput
                     placeholder="Please provide a detailed description of your complaint.........."
                     multiline
@@ -309,12 +382,36 @@ const HomeScreen = ({ navigation }) => {
                     containerStyle={{ alignSelf: 'center' }}
                 />
 
-                {/* Submit */}
                 <GlobalButton
                     title="Submit"
                     containerStyle={{ marginTop: hp(2), alignSelf: 'center' }}
                     onPress={handleSubmit}
+                    disabled={isLoading}
                 />
+
+                {showSuccess && (
+                    <Animated.View
+                        style={[
+                            styles.successContainer,
+                            {
+                                opacity: fadeAnim,
+                                transform: [{ translateY: slideAnim }],
+                            },
+                        ]}
+                    >
+                         <View style={{width:wp(80),alignSelf:'center',borderRadius:wp(8),paddingVertical:hp(2)}}>
+                         <Image
+                            source={require('../../src/assets/images/ys.png')} 
+                            style={styles.successImage}
+                            resizeMode="contain"
+                        
+                        />
+                        <GlobalText style={styles.successText} children="Nenu vinnanu" />
+                        <GlobalText style={styles.successText} children="Nenu unnanu" />
+                         </View>
+                    
+                    </Animated.View>
+                )}
             </ScrollView>
         </KeyboardAvoidingView>
     );
@@ -383,5 +480,39 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
         resizeMode: 'cover',
+    },
+    loaderContainer: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(255,255,255,0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1000,
+    },
+    successContainer: {
+        position: 'absolute',
+        bottom:hp(5),
+        left: 0,
+        right: 0,
+        height: hp(50),
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        zIndex: 1000,
+    },
+    successImage: {
+        width: wp(50),
+        height: wp(30),
+        alignSelf: 'center',
+        marginBottom: hp(1),
+    },
+    successText: {
+        fontSize: wp(6),
+        fontFamily: customFonts.interBold,
+        color:'green',
+        textAlign: 'center',
+        letterSpacing:1
+        
+   
+    
     },
 });

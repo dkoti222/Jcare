@@ -9,8 +9,18 @@ import {
     TouchableOpacity,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import GlobalText from '../components/GlobalText';
+import { customFonts } from '../theme/fonts';
+import { widthPercentageToDP as wp, heightPercentageToDP as hp } from 'react-native-responsive-screen';
+import { colors } from '../theme/colors';
 
-const ComplaintScreen = () => {
+const ComplaintScreen = ({ navigation, route }) => {
+
+    const complaints = route.params;
+    console.log(complaints?.complaintData?.media_urls, 'complaints');
+
+
+
     const [expanded, setExpanded] = useState(false);
     const toggleExpand = () => setExpanded(!expanded);
 
@@ -22,30 +32,81 @@ I am writing to highlight a critical water supply issue in vikkiralapeta. For tw
     return (
         <View style={styles.container}>
             {/* Header */}
-            <View style={styles.header}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.header}>
                 <Icon name="arrow-back-ios" size={20} color="#000" />
                 <Text style={styles.headerText}>Complaint</Text>
-            </View>
+            </TouchableOpacity>
 
             <ScrollView contentContainerStyle={styles.content}>
                 {/* Complaint Card */}
                 <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <Text style={styles.complaintId}># 123456</Text>
-                        <Text style={styles.time}>05:21 AM ,15 jun|2024</Text>
+
+                    <View>
+                        <View style={styles.rowCard}>
+                            <GlobalText
+                                children={'Complain No :'}
+                                fontFamily={customFonts.interRegular}
+                                fontSize={13}
+                            />
+                            <GlobalText
+                                children={complaints?.complaintData.id?.slice(0, 5)}
+                                fontFamily={customFonts.interSemi_Bold}
+                                fontSize={13}
+                                numberOfLines={1}
+                            />
+                        </View>
+                        <View style={styles.rowCard}>
+                            <GlobalText
+                                children={'District :'}
+                                fontFamily={customFonts.interRegular}
+                                fontSize={13}
+                            />
+                            <GlobalText
+                                children={complaints?.complaintData.district}
+                                fontFamily={customFonts.interSemi_Bold}
+                                fontSize={13}
+                            />
+                        </View>
+                        <View style={styles.rowCard}>
+                            <GlobalText
+                                children={'Panchayat :'}
+                                fontFamily={customFonts.interRegular}
+                                fontSize={13}
+                            />
+                            <GlobalText
+                                children={complaints?.complaintData.panchayat}
+                                fontFamily={customFonts.interSemi_Bold}
+                                fontSize={13}
+                            />
+                        </View>
+                        <View style={styles.rowCard}>
+                            <GlobalText
+                                children={'Status :'}
+                                fontFamily={customFonts.interRegular}
+                                fontSize={13}
+                            />
+                            <GlobalText
+                                children={complaints?.complaintData.status}
+                                fontFamily={customFonts.interSemi_Bold}
+                                fontSize={13}
+                            />
+                        </View>
+
+                        <View>
+                            {JSON.parse(complaints?.complaintData?.media_urls)?.map((item, index) => (
+                                <View key={index}>
+                                    <Image source={{ uri: item }} style={styles.photoBox} />
+                                </View>
+                            ))}
+
+                        </View>
                     </View>
 
-                    <Text style={styles.info}><Text style={styles.label}>Panchayat :</Text> Guntur</Text>
-                    <Text style={styles.info}><Text style={styles.label}>Mandal :</Text> water</Text>
-                    <Text style={styles.info}><Text style={styles.label}>District :</Text> Started woking</Text>
-                    <Text style={styles.info}><Text style={styles.label}>Panchayat level :</Text> Started woking</Text>
 
-                    {/* Image Row */}
-                    <View style={styles.imageRow}>
-                        <Image source={{ uri: 'https://via.placeholder.com/80' }} style={styles.image} />
-                        <Image source={{ uri: 'https://via.placeholder.com/80' }} style={styles.image} />
-                        <Image source={{ uri: 'https://via.placeholder.com/80' }} style={styles.image} />
-                    </View>
+
+
+
+
 
                     {/* Description */}
                     <Text style={styles.description}>
@@ -103,6 +164,22 @@ I am writing to highlight a critical water supply issue in vikkiralapeta. For tw
 export default ComplaintScreen;
 
 const styles = StyleSheet.create({
+
+    rowCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: wp(1),
+    },
+    photoBox: {
+        width: wp(15),
+        height: wp(15),
+        borderWidth: 1,
+        borderColor: colors.gray,
+        borderRadius: 8,
+        overflow: 'hidden',
+        marginVertical: hp(2),
+
+    },
     container: {
         flex: 1,
         backgroundColor: '#fff',
